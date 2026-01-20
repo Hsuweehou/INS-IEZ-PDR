@@ -3,21 +3,12 @@
 ## 算法
 - 扩展卡尔曼滤波EKF
 
-## 结果
-
-<div align="center">
-  <img src="./res/trajectory_3d.png" alt="3D轨迹" width="45%" />
-  <img src="./res/trajectory_xy.png" alt="XY平面轨迹" width="45%" />
-</div>
-
-
 ## build
 
 ### 前置要求
 - CMake 3.18
 - C++17
 - Eigen3
-- Matplot++
 
 ### 构建步骤
 
