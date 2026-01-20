@@ -27,6 +27,13 @@
 struct IEZ_ {
     double diff_endup = 0.0;
     double travelled_distance = 0.0;
+    // 添加旋转和平移历史数据用于可视化
+    Eigen::MatrixXd rotation_history_;  // 每帧的旋转矩阵（存储为9个元素：3x3矩阵展平）
+    Eigen::MatrixXd position_history_;  // 每帧的位置 (N x 3)
+    Eigen::MatrixXd euler_angles_;     // 每帧的欧拉角 (N x 3: roll, pitch, yaw)
+    std::vector<bool> stationary_;    // 每帧的静止检测结果
+    Eigen::VectorXd acc_magnitude_;   // 每帧的加速度大小
+    Eigen::VectorXd gyro_magnitude_;   // 每帧的陀螺仪大小
 };
 
 // IEZ算法类
@@ -52,9 +59,6 @@ public:
     IEZ9StatesProcessor& operator=(IEZ9StatesProcessor&&) = default;
     
     IEZ_ process();
-    
-    // 可视化轨迹和旋转
-    void visualize() const;
 
 private:
     // 配置参数
@@ -79,9 +83,7 @@ private:
     Eigen::MatrixXd vel_n_;
     Eigen::MatrixXd pos_n_;
     std::vector<bool> stationary_;
-    
-    // 旋转矩阵历史（用于可视化）
-    std::vector<Eigen::Matrix3d> rotation_history_;
+    std::vector<Eigen::Matrix3d> rotation_matrices_;  // 保存每帧的旋转矩阵
     
     // 初始值和状态
     Eigen::Vector3d gyro_bias_;

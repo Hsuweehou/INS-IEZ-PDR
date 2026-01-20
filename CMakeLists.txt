@@ -48,23 +48,27 @@ else()
 	message(FATAL_ERROR "Can not find eigen3!")
 endif()
 
-# Matplot++
-set(Matplot++_DIR ${THIRD_PARTY_LIBRARY_DIR}/Matplot++/lib/cmake/Matplot++)
-message(STATUS "Matplot++_DIR = ${Matplot++_DIR}")
-find_package(Matplot++ REQUIRED PATHS ${Matplot++_DIR})
-if(Matplot++_FOUND)
-	message("Matplot++ found!")
-	add_compile_definitions(USE_MATPLOT)
-else()
-	message(FATAL_ERROR "Can not find Matplot++!")
-endif()
-
 # 源文件列表
 set(SOURCES
     src/main.cpp
     src/iez_pdr.cpp
     src/utils.cpp
+    src/visualization.cpp
 )
+
+# ImGui 源文件
+file(GLOB IMGUI_SOURCES
+    "${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92/*.cpp"
+    "${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92/backends/imgui_impl_glfw.cpp"
+    "${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92/backends/imgui_impl_opengl3.cpp"
+)
+
+link_directories(
+    ${THIRD_PARTY_LIBRARY_DIR}/glfw-3.4/lib-vc2019
+    ${THIRD_PARTY_LIBRARY_DIR}/glm/lib
+)
+
+list(APPEND SOURCES ${IMGUI_SOURCES})
 
 # 创建可执行文件
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -72,20 +76,15 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # 设置头文件包含目录
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${THIRD_PARTY_LIBRARY_DIR}/glfw-3.4/include
+    ${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92
+    ${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92/backends
+    ${THIRD_PARTY_LIBRARY_DIR}/imgui_gl_1.92/extension
+    ${THIRD_PARTY_LIBRARY_DIR}/glm
 )
 
-# 链接库
-if(UNIX)
-    # Linux/Unix 需要链接 pthread
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        pthread
-        Eigen3::Eigen
-        Matplot++::matplot
-    )
-else()
-    # Windows 链接 Eigen3 和 Matplot++
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        Eigen3::Eigen
-        Matplot++::matplot
-    )
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    glfw3
+    opengl32
+    Eigen3::Eigen
+)

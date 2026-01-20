@@ -6,10 +6,13 @@
 ## 结果
 
 <div align="center">
-  <img src="./res/trajectory_3d.png" alt="3D轨迹" width="45%" />
-  <img src="./res/trajectory_xy.png" alt="XY平面轨迹" width="45%" />
+  <img src="./res/2D.jpg" alt="2D轨迹" width="45%" />
+  <img src="./res/3D.jpg" alt="3D轨迹" width="45%" />
 </div>
 
+<div align="center">
+  <img src="./res/still_detect.jpg" alt="静止检测" width="45%" />
+</div>
 
 ## build
 
@@ -17,6 +20,8 @@
 - CMake 3.18
 - C++17（MSVC、GCC、Clang）
 - Eigen3
+- imgui
+- opengl3
 
 ### 构建步骤
 

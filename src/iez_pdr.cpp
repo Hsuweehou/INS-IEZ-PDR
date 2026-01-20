@@ -1,10 +1,5 @@
 #include "iez_pdr.h"
 
-// 如果定义了 USE_MATPLOT，包含 Matplot++ 头文件
-#ifdef USE_MATPLOT
-#include <matplot/matplot.h>
-#endif
-
 // 静态辅助函数：四元数转欧拉角
 namespace {
     void toEulerAngle(const Eigen::Quaterniond& q, double& roll, double& pitch, double& yaw) {
@@ -81,6 +76,8 @@ void IEZ9StatesProcessor::initializeMatrices(int file_length) {
     vel_n_ = Eigen::MatrixXd::Zero(file_length, 3);
     pos_n_ = Eigen::MatrixXd::Zero(file_length, 3);
     stationary_.assign(file_length, false);
+    rotation_matrices_.clear();
+    rotation_matrices_.reserve(file_length);
 }
 
 void IEZ9StatesProcessor::loadData(int file_length) {
@@ -227,10 +224,9 @@ void IEZ9StatesProcessor::processMainLoop(int file_length) {
     Eigen::Matrix3d C_prev = C_init_;
     
     // 清空旋转历史并保存初始旋转矩阵
-    rotation_history_.clear();
-    rotation_history_.reserve(file_length);
-    rotation_history_.push_back(C_init_); // 保存初始旋转
-
+    rotation_matrices_.clear();
+    rotation_matrices_.push_back(C_init_);  // 保存第一帧
+    
     // 误差协方差矩阵
     Eigen::Matrix<double, 9, 9> P = Eigen::Matrix<double, 9, 9>::Identity();
 
@@ -324,8 +320,8 @@ void IEZ9StatesProcessor::processMainLoop(int file_length) {
         // 保存旋转估计
         C_prev = C;
         
-        // 保存旋转矩阵历史用于可视化
-        rotation_history_.push_back(C);
+        // 保存当前帧的旋转矩阵用于可视化
+        rotation_matrices_.push_back(C);
     }
 }
 
@@ -354,136 +350,48 @@ IEZ_ IEZ9StatesProcessor::calculateResults(int file_length) {
     }
     result.travelled_distance = soma;
 
-    return result;
-}
-
-void IEZ9StatesProcessor::visualize() const {
-    // 提取位置数据
-    std::vector<double> x, y, z;
-    std::vector<double> roll, pitch, yaw;
-    std::vector<double> time;
+    // 保存位置历史
+    result.position_history_ = pos_n_;
     
-    for (int t = 0; t < file_length_; t++) {
-        x.push_back(pos_n_(t, 0));
-        y.push_back(pos_n_(t, 1));
-        z.push_back(pos_n_(t, 2));
-        time.push_back(t * dt_);
+    // 保存旋转矩阵历史（展平为 N x 9 矩阵）
+    result.rotation_history_ = Eigen::MatrixXd::Zero(file_length, 9);
+    result.euler_angles_ = Eigen::MatrixXd::Zero(file_length, 3);
+    
+    for (int i = 0; i < file_length && i < static_cast<int>(rotation_matrices_.size()); i++) {
+        const Eigen::Matrix3d& C = rotation_matrices_[i];
         
+        // 保存旋转矩阵（展平）
+        result.rotation_history_.row(i) << C(0,0), C(0,1), C(0,2),
+                                           C(1,0), C(1,1), C(1,2),
+                                           C(2,0), C(2,1), C(2,2);
+        
+        // 将旋转矩阵转换为欧拉角 (ZYX顺序: yaw, pitch, roll)
+        double roll, pitch, yaw;
         // 从旋转矩阵提取欧拉角
-        if (t < static_cast<int>(rotation_history_.size())) {
-            Eigen::Matrix3d C = rotation_history_[t];
-            // 提取欧拉角 (ZYX顺序)
-            double pitch_val = -asin(C(2, 0));
-            double roll_val, yaw_val;
-            if (cos(pitch_val) > 1e-6) {
-                roll_val = atan2(C(2, 1), C(2, 2));
-                yaw_val = atan2(C(1, 0), C(0, 0));
-            } else {
-                roll_val = atan2(-C(0, 1), C(1, 1));
-                yaw_val = 0.0;
-            }
-            roll.push_back(roll_val * 180.0 / M_PI);
-            pitch.push_back(pitch_val * 180.0 / M_PI);
-            yaw.push_back(yaw_val * 180.0 / M_PI);
+        pitch = -asin(C(2, 0));
+        double cp = cos(pitch);
+        if (fabs(cp) > 1e-6) {
+            roll = atan2(C(2, 1) / cp, C(2, 2) / cp);
+            yaw = atan2(C(1, 0) / cp, C(0, 0) / cp);
         } else {
-            roll.push_back(0.0);
-            pitch.push_back(0.0);
-            yaw.push_back(0.0);
+            // 万向锁情况
+            roll = atan2(-C(0, 1), C(1, 1));
+            yaw = 0.0;
         }
+        
+        result.euler_angles_(i, 0) = roll;
+        result.euler_angles_(i, 1) = pitch;
+        result.euler_angles_(i, 2) = yaw;
     }
     
-#ifdef USE_MATPLOT
-    // 如果 Matplot++ 可用，尝试进行可视化
-    try {
-        using namespace matplot;
-        
-        // 使用 gnuplot 后端（默认后端）
-        // 注意：需要 gnuplot 可执行文件在系统 PATH 中
-        // 为了避免 multiplot 警告，使用单独的图形窗口而不是 subplot
-        
-        // 图形1: 3D轨迹
-        {
-            auto f1 = figure();
-            plot3(x, y, z);
-            title("3D轨迹");
-            xlabel("X (m)");
-            ylabel("Y (m)");
-            zlabel("Z (m)");
-            grid(on);
-            // 保存图像而不是显示，避免 multiplot 问题
-            save("trajectory_3d.png");
-        }
-        
-        // 图形2: XY平面轨迹
-        {
-            auto f2 = figure();
-            plot(x, y);
-            title("XY平面轨迹");
-            xlabel("X (m)");
-            ylabel("Y (m)");
-            grid(on);
-            axis(equal);
-            save("trajectory_xy.png");
-        }
-        
-        // 图形3: 位置随时间变化
-        {
-            auto f3 = figure();
-            // 使用矩阵方式绘制多条线，避免 hold 导致的 multiplot 问题
-            std::vector<std::vector<double>> Y = {x, y, z};
-            std::vector<std::string> labels = {"X", "Y", "Z"};
-            plot(time, Y);
-            title("位置随时间变化");
-            xlabel("时间 (s)");
-            ylabel("位置 (m)");
-            legend(labels);
-            grid(on);
-            save("position_vs_time.png");
-        }
-        
-        // 图形4: 欧拉角随时间变化
-        {
-            auto f4 = figure();
-            // 使用矩阵方式绘制多条线，避免 hold 导致的 multiplot 问题
-            std::vector<std::vector<double>> angles = {roll, pitch, yaw};
-            std::vector<std::string> labels = {"Roll", "Pitch", "Yaw"};
-            plot(time, angles);
-            title("欧拉角随时间变化");
-            xlabel("时间 (s)");
-            ylabel("角度 (度)");
-            legend(labels);
-            grid(on);
-            save("euler_angles.png");
-        }
-        
-        std::cout << "\n可视化图像已保存:" << std::endl;
-        std::cout << "  - trajectory_3d.png (3D轨迹)" << std::endl;
-        std::cout << "  - trajectory_xy.png (XY平面轨迹)" << std::endl;
-        std::cout << "  - position_vs_time.png (位置随时间变化)" << std::endl;
-        std::cout << "  - euler_angles.png (欧拉角随时间变化)" << std::endl;
-    } catch (const std::exception& e) {
+    // 保存静止检测数据
+    result.stationary_ = stationary_;
+    
+    // 计算加速度和陀螺仪大小用于可视化
+    result.acc_magnitude_ = (acc_s_.array().square().rowwise().sum()).sqrt();
+    result.gyro_magnitude_ = (gyro_s_.array().square().rowwise().sum()).sqrt();
 
-        std::cout << "\n=== 轨迹可视化数据 ===" << std::endl;
-        std::cout << "总数据点数: " << file_length_ << std::endl;
-        std::cout << "\n前10个位置点:" << std::endl;
-        std::cout << "时间(s)\tX(m)\tY(m)\tZ(m)\tRoll(度)\tPitch(度)\tYaw(度)" << std::endl;
-        for (size_t i = 0; i < std::min(static_cast<size_t>(10), x.size()); i++) {
-            std::cout << time[i] << "\t" << x[i] << "\t" << y[i] << "\t" << z[i] 
-                      << "\t" << roll[i] << "\t" << pitch[i] << "\t" << yaw[i] << std::endl;
-        }
-    }
-#else
-    // 如果 Matplot++ 不可用，输出数据到控制台
-    std::cout << "\n=== 轨迹可视化数据 ===" << std::endl;
-    std::cout << "总数据点数: " << file_length_ << std::endl;
-    std::cout << "\n前10个位置点:" << std::endl;
-    std::cout << "时间(s)\tX(m)\tY(m)\tZ(m)\tRoll(度)\tPitch(度)\tYaw(度)" << std::endl;
-    for (size_t i = 0; i < std::min(static_cast<size_t>(10), x.size()); i++) {
-        std::cout << time[i] << "\t" << x[i] << "\t" << y[i] << "\t" << z[i] 
-                  << "\t" << roll[i] << "\t" << pitch[i] << "\t" << yaw[i] << std::endl;
-    }
-    std::cout << "\n提示: 要启用图形可视化，请安装 Matplot++ 并在 CMakeLists.txt 中定义 USE_MATPLOT" << std::endl;
-#endif
+    return result;
 }
 
 // StillDetectionProcessor 类实现
