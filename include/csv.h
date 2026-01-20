@@ -1195,5 +1195,5 @@ public:
     return true;
   }
 };
-} // namespace io
+}
 #endif
